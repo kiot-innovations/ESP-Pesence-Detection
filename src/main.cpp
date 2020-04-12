@@ -6,6 +6,7 @@
 // uint8_t channel = 1; 
 unsigned int channel = 1; 
 void setup() { 
+  delay(5000);
  Serial.begin(57600); 
  Serial.printf("\n\nSDK version:%s\n\r", system_get_sdk_version()); 
  Serial.println(F("ESP8266 mini-sniff by Ray Burnette http://www.hackster.io/rayburne/projects")); 

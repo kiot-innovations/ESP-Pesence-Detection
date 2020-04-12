@@ -15,6 +15,8 @@ struct beaconinfo
   int err;
   signed rssi;
   uint8_t capa[2];
+  unsigned long lastTickAt;
+  unsigned long firstFoundAt;
 };
 
 struct clientinfo
@@ -26,6 +28,17 @@ struct clientinfo
   int err;
   signed rssi;
   uint16_t seq_n;
+  unsigned long lastTickAt;
+  unsigned long firstFoundAt;
+};
+
+struct unknownClient {
+  uint8_t bssid[ETH_MAC_LEN];
+  int channel;
+  int err;
+  signed rssi;
+  unsigned long lastTickAt;
+  unsigned long firstFoundAt;
 };
 
 /* ==============================================
@@ -78,6 +91,17 @@ struct sniffer_buf2 {
   uint16_t len;
 };
 
+void printFrame(uint8_t * buf, uint16_t len){
+char newBuf[len * 4];
+for(int i = 0 ; i < sizeof(newBuf) ; i++){
+newBuf[i] = '\0';
+}
+for(int i = 0 ; i < len ; i++){
+  sprintf(newBuf, "%s %02x", newBuf, buf[i]);
+}
+Serial.println(newBuf);
+}
+
 struct clientinfo parse_data(uint8_t *frame, uint16_t framelen, signed rssi, unsigned channel)
 {
   struct clientinfo ci;
@@ -129,6 +153,7 @@ struct clientinfo parse_data(uint8_t *frame, uint16_t framelen, signed rssi, uns
   memcpy(ci.ap, ap, ETH_MAC_LEN);
 
   ci.seq_n = frame[23] * 0xFF + (frame[22] & 0xF0);
+  ci.lastTickAt = millis();
   return ci;
 }
 
@@ -179,6 +204,17 @@ struct beaconinfo parse_beacon(uint8_t *frame, uint16_t framelen, signed rssi)
   bi.capa[0] = frame[34];
   bi.capa[1] = frame[35];
   memcpy(bi.bssid, frame + 10, ETH_MAC_LEN);
+  bi.lastTickAt = millis();
   return bi;
 }
+
+struct  unknownClient parse_probe_request(uint8_t* frame, uint16_t framelen, signed rssi)
+{
+  struct unknownClient uc;
+  uc.rssi = rssi;
+  memcpy(uc.bssid, frame + 10, ETH_MAC_LEN);
+  uc.lastTickAt = millis();
+  return uc;
+};
+
 

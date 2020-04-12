@@ -14,14 +14,16 @@ extern "C" {
 
 #define MAX_APS_TRACKED 100
 #define MAX_CLIENTS_TRACKED 200
+#define MAX_UNKNOWN_CLIENTS 50
+#define SIGNAL_THRESHOLD -50
 
 beaconinfo aps_known[MAX_APS_TRACKED];                    // Array to save MACs of known APs
 int aps_known_count = 0;                                  // Number of known APs
 int nothing_new = 0;
 clientinfo clients_known[MAX_CLIENTS_TRACKED];            // Array to save MACs of known CLIENTs
 int clients_known_count = 0;                              // Number of known CLIENTs
-
-
+unknownClient unknown_clients[MAX_UNKNOWN_CLIENTS];
+int unknown_client_count = 0;
 
 int register_beacon(beaconinfo beacon)
 {
@@ -35,9 +37,11 @@ int register_beacon(beaconinfo beacon)
   }
   if (! known)  // AP is NEW, copy MAC to array and return it
   {
+    Serial.println("Registering Here");
+    beacon.firstFoundAt = millis();
     memcpy(&aps_known[aps_known_count], &beacon, sizeof(beacon));
     aps_known_count++;
-
+    Serial.printf("%02x%02x%02x%02x%02x%02x \n", beacon.bssid[0],beacon.bssid[1],beacon.bssid[2],beacon.bssid[3],beacon.bssid[4],beacon.bssid[5]);
     if ((unsigned int) aps_known_count >=
         sizeof (aps_known) / sizeof (aps_known[0]) ) {
       Serial.printf("exceeded max aps_known\n");
@@ -59,6 +63,7 @@ int register_client(clientinfo ci)
   }
   if (! known)
   {
+    ci.firstFoundAt = millis();
     memcpy(&clients_known[clients_known_count], &ci, sizeof(ci));
     clients_known_count++;
 
@@ -66,6 +71,28 @@ int register_client(clientinfo ci)
         sizeof (clients_known) / sizeof (clients_known[0]) ) {
       Serial.printf("exceeded max clients_known\n");
       clients_known_count = 0;
+    }
+  }
+  return known;
+}
+
+int register_unknown_client(unknownClient uc){
+  int known = 0;
+  for(int u = 0; u < unknown_client_count; u++){
+    if(!memcmp(unknown_clients[u].bssid, uc.bssid, ETH_MAC_LEN)){
+      known = 1;
+      break;
+    }
+  }
+  if(!known){
+    Serial.println("Registering an unknown client");
+    uc.firstFoundAt = millis();
+    memcpy(&unknown_clients[unknown_client_count], &uc, sizeof(uc));
+    unknown_client_count++;
+    if ((unsigned int) unknown_client_count >=
+        sizeof (unknown_clients) / sizeof (unknown_clients[0]) ) {
+      Serial.printf("exceeded max unknown clients\n");
+      unknown_client_count = 0;
     }
   }
   return known;
@@ -115,21 +142,54 @@ void print_client(clientinfo ci)
   }
 }
 
+void print_unknowun_client(unknownClient uc){
+  Serial.print("UNDEVICE: ");
+  for (int i = 0; i < 6; i++) Serial.printf("%02x", uc.bssid[i]);
+  Serial.printf(" ==> \n");
+}
+
+
 void promisc_cb(uint8_t *buf, uint16_t len)
 {
+  signed int potencia;
   int i = 0;
   uint16_t seq_n_new = 0;
   if (len == 12) {
     struct RxControl *sniffer = (struct RxControl*) buf;
+    potencia = sniffer->rssi;
+    if(int8_t(potencia)<SIGNAL_THRESHOLD){
+      return;
+    }
   } else if (len == 128) {
     struct sniffer_buf2 *sniffer = (struct sniffer_buf2*) buf;
-    struct beaconinfo beacon = parse_beacon(sniffer->buf, 112, sniffer->rx_ctrl.rssi);
-    if (register_beacon(beacon) == 0) {
-      print_beacon(beacon);
-      nothing_new = 0;
-    }
+      potencia = sniffer->rx_ctrl.rssi;
+      if(int8_t(potencia)<SIGNAL_THRESHOLD){
+        return;
+      }
+      if(buf[12] == 0x40){
+          // This is a probe request
+          // printFrame(buf,len);
+          struct unknownClient uc = parse_probe_request(sniffer->buf, 112, sniffer->rx_ctrl.rssi);
+          if(register_unknown_client(uc)  == 0 ){
+            print_unknowun_client(uc);
+            nothing_new = 0;
+          }
+
+      }else{
+        // This is a becon packet.
+        struct beaconinfo beacon = parse_beacon(sniffer->buf, 112, sniffer->rx_ctrl.rssi);
+        if (register_beacon(beacon) == 0) {
+          print_beacon(beacon);
+          nothing_new = 0;
+        }
+      }
   } else {
     struct sniffer_buf *sniffer = (struct sniffer_buf*) buf;
+    potencia = sniffer->rx_ctrl.rssi;
+    if(int8_t(potencia)<SIGNAL_THRESHOLD){
+      return;
+    }
+    // printFrame(buf, len);
     //Is data or QOS?
     if ((sniffer->buf[0] == 0x08) || (sniffer->buf[0] == 0x88)) {
       struct clientinfo ci = parse_data(sniffer->buf, 36, sniffer->rx_ctrl.rssi, sniffer->rx_ctrl.channel);
