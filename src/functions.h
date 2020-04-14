@@ -79,7 +79,7 @@ int register_client(clientinfo ci)
 int register_unknown_client(unknownClient uc){
   int known = 0;
   for(int u = 0; u < unknown_client_count; u++){
-    if(!memcmp(unknown_clients[u].bssid, uc.bssid, ETH_MAC_LEN)){
+    if(!memcmp(unknown_clients[u].sa, uc.sa, ETH_MAC_LEN)){
       known = 1;
       break;
     }
@@ -144,8 +144,12 @@ void print_client(clientinfo ci)
 
 void print_unknowun_client(unknownClient uc){
   Serial.print("UNDEVICE: ");
-  for (int i = 0; i < 6; i++) Serial.printf("%02x", uc.bssid[i]);
-  Serial.printf(" ==> \n");
+  for (int i = 0; i < 6; i++) Serial.printf("%02x", uc.sa[i]);
+  Serial.printf(" ==> ");
+  if(uc.is_randomized){
+    Serial.print(" RANDOM ");
+  }
+  Serial.println(" ");
 }
 
 
@@ -172,14 +176,17 @@ void promisc_cb(uint8_t *buf, uint16_t len)
           struct unknownClient uc = parse_probe_request(sniffer->buf, 112, sniffer->rx_ctrl.rssi);
           if(register_unknown_client(uc)  == 0 ){
             print_unknowun_client(uc);
+            // printFrame(buf,len);
             nothing_new = 0;
           }
 
       }else{
         // This is a becon packet.
+        // Usually buf[12] == 0x80. 
         struct beaconinfo beacon = parse_beacon(sniffer->buf, 112, sniffer->rx_ctrl.rssi);
         if (register_beacon(beacon) == 0) {
           print_beacon(beacon);
+          // printFrame(buf,len);
           nothing_new = 0;
         }
       }
@@ -196,6 +203,7 @@ void promisc_cb(uint8_t *buf, uint16_t len)
       if (memcmp(ci.bssid, ci.station, ETH_MAC_LEN)) {
         if (register_client(ci) == 0) {
           print_client(ci);
+          // printFrame(buf,len);
           nothing_new = 0;
         }
       }

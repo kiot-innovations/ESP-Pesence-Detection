@@ -6,6 +6,9 @@ uint8_t broadcast1[3] = { 0x01, 0x00, 0x5e };
 uint8_t broadcast2[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 uint8_t broadcast3[3] = { 0x33, 0x33, 0x00 };
 
+// https://www.freecodecamp.org/news/tracking-analyzing-over-200-000-peoples-every-step-at-mit-e736a507ddbf/
+uint8_t randomized_mac_header[2][3] = {{0xda, 0xa1,0x19}, {0x02, 0x18,0x6a}};
+
 struct beaconinfo
 {
   uint8_t bssid[ETH_MAC_LEN];
@@ -33,7 +36,10 @@ struct clientinfo
 };
 
 struct unknownClient {
+  uint8_t sa[ETH_MAC_LEN]; // Source address
+  uint8_t ds[ETH_MAC_LEN];
   uint8_t bssid[ETH_MAC_LEN];
+  bool is_randomized;
   int channel;
   int err;
   signed rssi;
@@ -93,13 +99,22 @@ struct sniffer_buf2 {
 
 void printFrame(uint8_t * buf, uint16_t len){
 char newBuf[len * 4];
+char newBuf2[len + 1];
+
 for(int i = 0 ; i < sizeof(newBuf) ; i++){
 newBuf[i] = '\0';
+newBuf2[i] = '\0';
 }
 for(int i = 0 ; i < len ; i++){
   sprintf(newBuf, "%s %02x", newBuf, buf[i]);
+  newBuf2[i] = (char)buf[i];
 }
+newBuf2[len] = '\0';
 Serial.println(newBuf);
+for(int i = 0 ; i < sizeof(newBuf2); i++){
+  Serial.print(newBuf2[i]);
+}
+Serial.println();
 }
 
 struct clientinfo parse_data(uint8_t *frame, uint16_t framelen, signed rssi, unsigned channel)
@@ -212,7 +227,18 @@ struct  unknownClient parse_probe_request(uint8_t* frame, uint16_t framelen, sig
 {
   struct unknownClient uc;
   uc.rssi = rssi;
-  memcpy(uc.bssid, frame + 10, ETH_MAC_LEN);
+  uc.is_randomized = false;
+  memcpy(uc.ds, frame + 4, ETH_MAC_LEN);
+  memcpy(uc.sa, frame + 10, ETH_MAC_LEN);
+  memcpy(uc.bssid, frame + 16, ETH_MAC_LEN);
+
+  for(int i = 0 ; i < sizeof(randomized_mac_header)/sizeof(randomized_mac_header[0]); i++ ){
+    if(memcmp(uc.sa,randomized_mac_header[i], 3) == 0){
+      uc.is_randomized = true;
+      break;
+    }
+  }
+
   uc.lastTickAt = millis();
   return uc;
 };
